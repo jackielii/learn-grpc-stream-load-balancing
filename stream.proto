@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+message HttpRequest {
+  string id = 1;
+  string n = 2;
+}
+
+message HttpResponse {
+  string id = 1;
+  string n = 2;
+}
+
+message Trigger {
+  string id = 1;
+}
+message TriggerResponse {
+  string id = 1;
+}
+
+service MySvc {
+  rpc stream(stream HttpResponse) returns (stream HttpRequest);
+  rpc trigger(Trigger) returns (TriggerResponse);
+}
