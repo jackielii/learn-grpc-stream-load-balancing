@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var addr = flag.String("addr", "localhost:15432", "the address to connect to")
+var addr = flag.String("addr", "localhost:54321", "the address to connect to")
 
 func main() {
 	flag.Parse()

@@ -54,7 +54,7 @@ func (s *svc) Trigger(ctx context.Context, in *pb.Trigger) (*pb.TriggerResponse,
 	}, nil
 }
 
-var port = flag.Int("port", 15432, "port")
+var port = flag.Int("port", 54321, "port")
 
 func main() {
 	flag.Parse()
