@@ -37,14 +37,14 @@ func main() {
 		log.Fatalf("could not stream: %v", err)
 	}
 	for {
-		log.Printf("client %s start receiving", id)
+		// log.Printf("client %s start receiving", id)
 		req, err := stream.Recv()
 		if err != nil {
 			log.Fatalf("could not receive: %v", err)
 		}
 
-		log.Printf("client %s received %s", id, req.N)
-		err = stream.Send(&pb.HttpResponse{Id: id, N: req.N})
+		// log.Printf("client %s received %s", id, req.N)
+		err = stream.Send(&pb.HttpResponse{TraceId: req.TraceId, Id: id, N: req.N})
 		if err != nil {
 			log.Fatalf("could not send: %v", err)
 		}

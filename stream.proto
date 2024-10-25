@@ -3,11 +3,13 @@ syntax = "proto3";
 message HttpRequest {
   string id = 1;
   string n = 2;
+  int64 trace_id = 3;
 }
 
 message HttpResponse {
   string id = 1;
   string n = 2;
+  int64 trace_id = 3;
 }
 
 message Trigger {

@@ -8,6 +8,7 @@ import (
 	"net"
 
 	"learn-grpc-stream-load-balancing/pb"
+	"learn-grpc-stream-load-balancing/queue"
 
 	"google.golang.org/grpc"
 )
@@ -16,43 +17,38 @@ type svc struct {
 	id string // server id
 	pb.UnimplementedMySvcServer
 
-	req  chan string
-	resp chan string
+	queue *queue.AsyncJobQueue[*pb.HttpRequest, *pb.HttpResponse]
 }
 
 func (s *svc) Stream(stream pb.MySvc_StreamServer) error {
-	log.Printf("client connected")
-	go func() {
-		for {
-			log.Printf("server %s start receiving trigger", s.id)
-			n := <-s.req
-			log.Printf("server %s received trigger %s", s.id, n)
-			log.Printf("server %s start sending request %s", s.id, n)
-			stream.Send(&pb.HttpRequest{Id: s.id, N: n})
-		}
-	}()
+	// log.Printf("client connected")
+	ctx := stream.Context()
 
-	for {
+	go s.queue.HandleSend(ctx, func(jr queue.JobReq[*pb.HttpRequest]) error {
+		jr.Req.TraceId = jr.TraceId()
+		return stream.Send(jr.Req)
+	})
+
+	go s.queue.HandleRecv(ctx, func() (queue.JobResp[*pb.HttpResponse], error) {
 		resp, err := stream.Recv()
 		if err != nil {
-			return err
+			return queue.JobResp[*pb.HttpResponse]{}, err
 		}
-		fmt.Printf("server %s received from client %s response %s\n", s.id, resp.Id, resp.N)
-		s.resp <- resp.N
-	}
+		jr := queue.JobResp[*pb.HttpResponse]{Resp: resp}
+		jr.SetTraceId(resp.TraceId)
+		return jr, nil
+	})
+
+	<-ctx.Done()
+
+	return nil
 }
 
 func (s *svc) Trigger(ctx context.Context, in *pb.Trigger) (*pb.TriggerResponse, error) {
 	msg := in.GetMsg()
-	log.Printf("server %s trigger %s", s.id, msg)
-	s.req <- msg
-	resp := <-s.resp
-	if resp != msg {
-		log.Printf("server %s expected %s but got %s", s.id, msg, resp)
-	}
-	return &pb.TriggerResponse{
-		Msg: resp,
-	}, nil
+	// log.Printf("server %s trigger %s", s.id, msg)
+	resp, err := s.queue.Do(&pb.HttpRequest{N: msg})
+	return &pb.TriggerResponse{Msg: resp.N}, err
 }
 
 var port = flag.Int("port", 54321, "port")
@@ -69,9 +65,8 @@ func main() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterMySvcServer(s, &svc{
-		id:   flag.Arg(0),
-		req:  make(chan string),
-		resp: make(chan string),
+		id:    flag.Arg(0),
+		queue: queue.New[*pb.HttpRequest, *pb.HttpResponse](),
 	})
 	log.Printf("server %s listening at %v", flag.Arg(0), lis.Addr())
 	if err := s.Serve(lis); err != nil {
