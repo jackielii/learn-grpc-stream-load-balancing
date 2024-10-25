@@ -1,7 +1,40 @@
+// Description: This package provides a simple async job queue that can be used in a gRPC stream server to control job requests and responses.
+//
+// Example:
+//
+//	func (s *svc) Stream(stream pb.MySvc_StreamServer) error {
+//	  ctx := stream.Context()
+//
+//	  go s.queue.HandleSend(ctx, func(jr queue.JobReq[*pb.HttpRequest]) error {
+//	    jr.Req.TraceId = jr.TraceId()
+//	    return stream.Send(jr.Req)
+//	  })
+//
+//	  go s.queue.HandleRecv(ctx, func() (queue.JobResp[*pb.HttpResponse], error) {
+//	    resp, err := stream.Recv()
+//	    if err != nil {
+//	      return queue.JobResp[*pb.HttpResponse]{}, err
+//	    }
+//	    jr := queue.JobResp[*pb.HttpResponse]{Resp: resp}
+//	    jr.SetTraceId(resp.TraceId)
+//	    return jr, nil
+//	  })
+//
+//	  <-ctx.Done()
+//
+//	  return nil
+//	}
+//
+//	func (s *svc) Trigger(ctx context.Context, in *pb.Trigger) (*pb.TriggerResponse, error) {
+//	  msg := in.GetMsg()
+//	  resp, err := s.queue.Do(&pb.HttpRequest{N: msg})
+//	  return &pb.TriggerResponse{Msg: resp.N}, err
+//	}
 package queue
 
 import (
 	"context"
+	"log"
 	"math/rand/v2"
 	"sync"
 )
@@ -35,6 +68,7 @@ type AsyncJobQueue[T any, R any] struct {
 	mu          sync.Mutex
 }
 
+// New creates a new AsyncJobQueue
 func New[T, R any]() *AsyncJobQueue[T, R] {
 	queue := &AsyncJobQueue[T, R]{
 		req:         make(chan JobReq[T]),
@@ -43,25 +77,33 @@ func New[T, R any]() *AsyncJobQueue[T, R] {
 	return queue
 }
 
+// HandleSend gets the request from the queue and calls send function
 func (q *AsyncJobQueue[T, R]) HandleSend(ctx context.Context, send func(JobReq[T]) error) error {
-	for req := range q.req {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := send(req); err != nil {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case req := <-q.req:
+			if err := send(req); err != nil {
+				// log.Printf("send error: %v", err)
+				return err
+			}
 		}
 	}
-	return nil
 }
 
+// HandleRecv gets a message from the stream and sends it to the queue for the result to be picked up by the Do
+// recv should return io.EOF when the client disconnects
 func (q *AsyncJobQueue[T, R]) HandleRecv(ctx context.Context, recv func() (JobResp[R], error)) error {
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		resp, err := recv()
+		// recv should return io.EOF when the client disconnects so we don't need to check ctx.Err()
+		// if err := ctx.Err(); err != nil {
+		// 	log.Printf("context error: %v", err)
+		// 	return err
+		// }
+		resp, err := recv() // recv should return io.EOF when the client disconnects
 		if err != nil {
+			log.Printf("recv error: %v", err)
 			return err
 		}
 		if resp.traceId == 0 {
@@ -79,6 +121,7 @@ func (q *AsyncJobQueue[T, R]) HandleRecv(ctx context.Context, recv func() (JobRe
 	}
 }
 
+// Do sends the request to the queue and waits for the response, then returns the response
 func (q *AsyncJobQueue[T, R]) Do(r T) (R, error) {
 	traceId := rand.Int64()
 	respCh := make(chan R)
