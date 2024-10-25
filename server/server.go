@@ -43,14 +43,15 @@ func (s *svc) Stream(stream pb.MySvc_StreamServer) error {
 }
 
 func (s *svc) Trigger(ctx context.Context, in *pb.Trigger) (*pb.TriggerResponse, error) {
-	log.Printf("server %s trigger %s", s.id, in.GetId())
-	s.req <- in.GetId()
+	msg := in.GetMsg()
+	log.Printf("server %s trigger %s", s.id, msg)
+	s.req <- msg
 	resp := <-s.resp
-	if resp != in.GetId() {
-		log.Printf("server %s expected %s but got %s", s.id, in.GetId(), resp)
+	if resp != msg {
+		log.Printf("server %s expected %s but got %s", s.id, msg, resp)
 	}
 	return &pb.TriggerResponse{
-		Id: resp,
+		Msg: resp,
 	}, nil
 }
 

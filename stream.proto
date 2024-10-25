@@ -11,10 +11,10 @@ message HttpResponse {
 }
 
 message Trigger {
-  string id = 1;
+  string msg = 1;
 }
 message TriggerResponse {
-  string id = 1;
+  string msg = 1;
 }
 
 service MySvc {

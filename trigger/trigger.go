@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
+	"strconv"
+	"sync"
 
 	"learn-grpc-stream-load-balancing/pb"
 
@@ -31,11 +34,28 @@ func main() {
 		return
 	}
 
-	resp, err := c.Trigger(ctx, &pb.Trigger{Id: flag.Arg(0)})
-	if err != nil {
-		log.Fatalf("could not trigger: %v", err)
+	n := 1
+	if flag.NArg() > 1 {
+		n, err = strconv.Atoi(flag.Arg(1))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-	if resp.GetId() != flag.Arg(0) {
-		log.Fatalf("expected %s but got %s", flag.Arg(0), resp.GetId())
+
+	wg := sync.WaitGroup{}
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			msg := fmt.Sprintf("%s: %d", flag.Arg(0), i)
+			resp, err := c.Trigger(ctx, &pb.Trigger{Msg: msg})
+			if err != nil {
+				log.Printf("could not trigger: %v", err)
+			}
+			if resp.GetMsg() != msg {
+				log.Printf("expected %s but got %s", msg, resp.GetMsg())
+			}
+		}()
 	}
+	wg.Wait()
 }
