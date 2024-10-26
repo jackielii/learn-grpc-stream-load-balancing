@@ -3,7 +3,7 @@ module learn-grpc-stream-load-balancing
 go 1.23.1
 
 require (
-	github.com/matoous/go-nanoid/v2 v2.1.0
+	github.com/davecgh/go-spew v1.1.1
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.35.1
 )

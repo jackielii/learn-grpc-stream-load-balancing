@@ -6,30 +6,42 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 
 	"learn-grpc-stream-load-balancing/pb"
 	"learn-grpc-stream-load-balancing/queue"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type svc struct {
 	id string // server id
 	pb.UnimplementedMySvcServer
 
-	queue *queue.AsyncJobQueue[*pb.HttpRequest, *pb.HttpResponse]
+	queues sync.Map
 }
 
 func (s *svc) Stream(stream pb.MySvc_StreamServer) error {
 	// log.Printf("client connected")
 	ctx := stream.Context()
+	md, _ := metadata.FromIncomingContext(ctx)
+	// spew.Dump(md)
 
-	go s.queue.HandleSend(ctx, func(jr queue.JobReq[*pb.HttpRequest]) error {
+	clientId := md.Get("client_id")
+	if len(clientId) == 0 {
+		return fmt.Errorf("client_id not found")
+	}
+	log.Printf("server %s client %s connected", s.id, clientId[0])
+	q, _ := s.queues.LoadOrStore(clientId[0], queue.New[*pb.HttpRequest, *pb.HttpResponse]())
+	qu := q.(*queue.AsyncJobQueue[*pb.HttpRequest, *pb.HttpResponse])
+
+	go qu.HandleSend(ctx, func(jr queue.JobReq[*pb.HttpRequest]) error {
 		jr.Req.TraceId = jr.TraceId()
 		return stream.Send(jr.Req)
 	})
 
-	go s.queue.HandleRecv(ctx, func() (queue.JobResp[*pb.HttpResponse], error) {
+	go qu.HandleRecv(ctx, func() (queue.JobResp[*pb.HttpResponse], error) {
 		resp, err := stream.Recv()
 		if err != nil {
 			return queue.JobResp[*pb.HttpResponse]{}, err
@@ -46,8 +58,14 @@ func (s *svc) Stream(stream pb.MySvc_StreamServer) error {
 
 func (s *svc) Trigger(ctx context.Context, in *pb.Trigger) (*pb.TriggerResponse, error) {
 	msg := in.GetMsg()
+	clientId := in.GetClientId()
+	q, ok := s.queues.Load(clientId)
+	if !ok {
+		return nil, fmt.Errorf("client %s not connected", clientId)
+	}
+	qu := q.(*queue.AsyncJobQueue[*pb.HttpRequest, *pb.HttpResponse])
 	// log.Printf("server %s trigger %s", s.id, msg)
-	resp, err := s.queue.Do(&pb.HttpRequest{N: msg})
+	resp, err := qu.Do(&pb.HttpRequest{N: msg})
 	return &pb.TriggerResponse{Msg: resp.N}, err
 }
 
@@ -65,8 +83,7 @@ func main() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterMySvcServer(s, &svc{
-		id:    flag.Arg(0),
-		queue: queue.New[*pb.HttpRequest, *pb.HttpResponse](),
+		id: flag.Arg(0),
 	})
 	log.Printf("server %s listening at %v", flag.Arg(0), lis.Addr())
 	if err := s.Serve(lis); err != nil {

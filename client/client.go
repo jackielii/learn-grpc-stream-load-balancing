@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 var addr = flag.String("addr", "localhost:54321", "the address to connect to")
@@ -32,6 +33,8 @@ func main() {
 
 	id := flag.Arg(0)
 
+	md := metadata.Pairs("client_id", id)
+	ctx = metadata.NewOutgoingContext(ctx, md)
 	stream, err := c.Stream(ctx)
 	if err != nil {
 		log.Fatalf("could not stream: %v", err)
@@ -43,7 +46,7 @@ func main() {
 			log.Fatalf("could not receive: %v", err)
 		}
 
-		// log.Printf("client %s received %s", id, req.N)
+		log.Printf("client %s received %s", id, req.N)
 		err = stream.Send(&pb.HttpResponse{TraceId: req.TraceId, Id: id, N: req.N})
 		if err != nil {
 			log.Fatalf("could not send: %v", err)

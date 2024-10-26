@@ -29,14 +29,17 @@ func main() {
 
 	ctx := context.Background()
 
-	if flag.NArg() == 0 {
+	if flag.NArg() < 2 {
 		flag.Usage()
 		return
 	}
 
+	clientId := flag.Arg(0)
+	triggerMsg := flag.Arg(1)
+
 	n := 1
-	if flag.NArg() > 1 {
-		n, err = strconv.Atoi(flag.Arg(1))
+	if flag.NArg() > 2 {
+		n, err = strconv.Atoi(flag.Arg(2))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -47,12 +50,15 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			msg := fmt.Sprintf("%s: %d", flag.Arg(0), i)
-			resp, err := c.Trigger(ctx, &pb.Trigger{Msg: msg})
+			msg := fmt.Sprintf("%s: %d", triggerMsg, i)
+			req := &pb.Trigger{
+				ClientId: clientId,
+				Msg:      msg,
+			}
+			resp, err := c.Trigger(ctx, req)
 			if err != nil {
 				log.Printf("could not trigger: %v", err)
-			}
-			if resp.GetMsg() != msg {
+			} else if resp.GetMsg() != msg {
 				log.Printf("expected %s but got %s", msg, resp.GetMsg())
 			}
 		}()
